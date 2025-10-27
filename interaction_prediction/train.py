@@ -10,6 +10,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
 
 import time
+import os
 from model.GameFormer import GameFormer
 from utils.inter_pred_utils import *
 
@@ -80,6 +81,10 @@ def validation_epoch(valid_data, model, epoch):
     ADEp,FDEp = [],[]
 
     logging.info(f'Validation...Epoch{epoch+1}')
+
+    # If there is no validation data, return empty metrics to avoid crash
+    if size == 0:
+        return {}, []
 
     for batch in valid_data:
         # prepare data
@@ -158,6 +163,13 @@ def main():
 
     set_seed(args.seed)
     local_rank = args.local_rank
+    # Fallback to environment if launcher didn't pass --local_rank
+    if local_rank is None:
+        try:
+            local_rank = int(os.getenv("LOCAL_RANK", "0"))
+        except ValueError:
+            local_rank = 0
+        args.local_rank = local_rank
     torch.cuda.set_device(local_rank)
     dist.init_process_group(backend='nccl')
 
@@ -191,14 +203,32 @@ def main():
         scheduler.step(curr_ep)
     
     # datasets:
-    train_dataset = DrivingData(args.train_set+'/*')
-    valid_dataset = DrivingData(args.valid_set+'/*')
+    # Match both nested and flat npz files
+    train_dataset = DrivingData(os.path.join(args.train_set, '**', '*.npz'))
+    valid_dataset = DrivingData(os.path.join(args.valid_set, '**', '*.npz'))
 
     training_size = len(train_dataset)
     valid_size = len(valid_dataset)
 
     if dist.get_rank() == 0:
         logging.info(f'Length train: {training_size}; Valid: {valid_size}')
+
+    # Early checks for dataset paths/sizes
+    if training_size == 0:
+        if dist.get_rank() == 0:
+            logging.error(
+                f"No training files found under '{args.train_set}'. "
+                f"Please preprocess data via interaction_prediction/data_process.py and set --train_set to the processed directory."
+            )
+        return
+
+    skip_validation = False
+    if valid_size == 0:
+        if dist.get_rank() == 0:
+            logging.warning(
+                f"No validation files found under '{args.valid_set}'. Validation will be skipped."
+            )
+        skip_validation = True
 
     train_sampler = DistributedSampler(train_dataset)
     valid_sampler = DistributedSampler(valid_dataset, shuffle=False)
@@ -225,7 +255,10 @@ def main():
         valid_data.sampler.set_epoch(epoch)
 
         train_loss = training_epoch(train_data, model, optimizer, epoch)
-        valid_metrics, val_loss = validation_epoch(valid_data, model, epoch)
+        if skip_validation:
+            valid_metrics, val_loss = {}, [float('nan')]
+        else:
+            valid_metrics, val_loss = validation_epoch(valid_data, model, epoch)
 
         # save to training log
         log = {
