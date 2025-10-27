@@ -200,6 +200,9 @@ class MotionMetrics:
         self._object_type.append(object_type.cpu())
 
     def result(self):
+        # If no samples were added, return empty metrics to avoid cat() error
+        if len(self._prediction_trajectory) == 0:
+            return {}
         # [batch_size, 1, top_k, 2, steps, 2].
         prediction_trajectory = torch.cat(self._prediction_trajectory, dim=0)
         # [batch_size, 1, top_k].
