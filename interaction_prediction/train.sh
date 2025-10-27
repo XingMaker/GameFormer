@@ -6,7 +6,7 @@ GPUS_PER_NODE=$(($GPUS<8?$GPUS:8))
 
 MASTER_PORT=${MASTER_PORT:-28596}
 
-python3 -m torch.distributed.launch \
+torchrun \
         --nproc_per_node=$GPUS_PER_NODE \
         --master_port=$MASTER_PORT \
         train.py \

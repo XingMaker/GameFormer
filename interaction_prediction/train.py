@@ -1,3 +1,4 @@
+import os
 import torch
 import sys
 sys.path.append('..')
@@ -157,7 +158,11 @@ def main():
     logging.info("Use device: {}".format(args.local_rank))
 
     set_seed(args.seed)
-    local_rank = args.local_rank
+    # torchrun sets LOCAL_RANK in the environment
+    local_rank = int(os.environ.get('LOCAL_RANK', args.local_rank if args.local_rank is not None else 0))
+    # Keep args.local_rank in sync for downstream .to(args.local_rank) calls
+    args.local_rank = local_rank
+    logging.info(f"Resolved LOCAL_RANK: {local_rank}")
     torch.cuda.set_device(local_rank)
     dist.init_process_group(backend='nccl')
 
