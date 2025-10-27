@@ -203,8 +203,9 @@ def main():
         scheduler.step(curr_ep)
     
     # datasets:
-    train_dataset = DrivingData(args.train_set+'/*')
-    valid_dataset = DrivingData(args.valid_set+'/*')
+    # Match both nested and flat npz files
+    train_dataset = DrivingData(os.path.join(args.train_set, '**', '*.npz'))
+    valid_dataset = DrivingData(os.path.join(args.valid_set, '**', '*.npz'))
 
     training_size = len(train_dataset)
     valid_size = len(valid_dataset)

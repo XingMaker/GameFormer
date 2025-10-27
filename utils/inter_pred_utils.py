@@ -1,4 +1,5 @@
 import os
+import zipfile
 import torch
 import logging
 import glob
@@ -35,9 +36,23 @@ class DrivingData(Dataset):
         paths = glob.glob(data_dir)
         # Only keep valid .npz files
         self.data_list = [p for p in paths if os.path.isfile(p) and p.lower().endswith('.npz')]
+        # Remove corrupted/non-zip files early to avoid runtime crashes
+        filtered_list = []
+        removed = 0
+        for p in self.data_list:
+            try:
+                if zipfile.is_zipfile(p):
+                    filtered_list.append(p)
+                else:
+                    removed += 1
+            except Exception:
+                removed += 1
+        self.data_list = filtered_list
         self.data_list.sort()
         if len(self.data_list) == 0:
             logging.warning(f"No .npz files matched pattern: {data_dir}")
+        elif removed > 0:
+            logging.warning(f"Filtered out {removed} non-zip or corrupted files from dataset: {data_dir}")
 
     def __len__(self):
         return len(self.data_list)
