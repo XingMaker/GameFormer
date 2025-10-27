@@ -1,4 +1,5 @@
 import torch
+import zipfile
 import logging
 import glob
 import random
@@ -9,7 +10,24 @@ from torch.nn import functional as F
 
 class DrivingData(Dataset):
     def __init__(self, data_dir):
-        self.data_list = glob.glob(data_dir)
+        # Collect files and filter to valid .npz zip archives
+        raw_list = glob.glob(data_dir)
+        filtered_list = []
+        for path in raw_list:
+            try:
+                if (
+                    os.path.isfile(path)
+                    and path.lower().endswith('.npz')
+                    and os.path.getsize(path) > 0
+                    and zipfile.is_zipfile(path)
+                ):
+                    with zipfile.ZipFile(path) as zf:
+                        if zf.testzip() is None:
+                            filtered_list.append(path)
+            except Exception:
+                continue
+
+        self.data_list = filtered_list
 
     def __len__(self):
         return len(self.data_list)
