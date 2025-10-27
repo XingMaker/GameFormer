@@ -210,6 +210,11 @@ def main():
     if dist.get_rank() == 0:
         logging.info(f'Length train: {training_size}; Valid: {valid_size}')
 
+    if training_size == 0 or valid_size == 0:
+        if dist.get_rank() == 0:
+            logging.error(f"Empty dataset: train={training_size}, valid={valid_size}. Check --train_set/--valid_set paths.")
+        return
+
     train_sampler = DistributedSampler(train_dataset)
     valid_sampler = DistributedSampler(valid_dataset, shuffle=False)
     train_data = DataLoader(
