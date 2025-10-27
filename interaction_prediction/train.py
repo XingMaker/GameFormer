@@ -10,6 +10,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
 
 import time
+import os
 from model.GameFormer import GameFormer
 from utils.inter_pred_utils import *
 
@@ -164,7 +165,6 @@ def main():
     local_rank = args.local_rank
     # Fallback to environment if launcher didn't pass --local_rank
     if local_rank is None:
-        import os
         try:
             local_rank = int(os.getenv("LOCAL_RANK", "0"))
         except ValueError:
