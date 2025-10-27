@@ -1,4 +1,5 @@
 import torch
+import os
 import sys
 sys.path.append('..')
 import csv
@@ -151,12 +152,21 @@ def main():
     os.makedirs(log_path, exist_ok=True)
     initLogging(log_file=log_path+'train.log')
 
+    # Fallback for torchrun which sets LOCAL_RANK via environment
+    if args.local_rank is None:
+        env_local_rank = os.environ.get("LOCAL_RANK")
+        try:
+            args.local_rank = int(env_local_rank) if env_local_rank is not None else 0
+        except (TypeError, ValueError):
+            args.local_rank = 0
+
     logging.info("------------- {} -------------".format(args.name))
     logging.info("Batch size: {}".format(args.batch_size))
     logging.info("Learning rate: {}".format(args.learning_rate))
     logging.info("Use device: {}".format(args.local_rank))
 
     set_seed(args.seed)
+
     local_rank = args.local_rank
     torch.cuda.set_device(local_rank)
     dist.init_process_group(backend='nccl')
