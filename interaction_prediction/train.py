@@ -265,7 +265,8 @@ def main():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Interaction Prediction Training')
-    parser.add_argument("--local_rank", type=int)
+    # Accept both underscore and hyphen variants for compatibility with different launchers
+    parser.add_argument("--local_rank", "--local-rank", type=int, dest="local_rank")
     # training
     parser.add_argument("--batch_size", type=int, help='training batch sizes', default=16)
     parser.add_argument("--training_epochs", type=int, help='training epochs', default=30)
