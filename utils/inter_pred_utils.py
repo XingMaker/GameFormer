@@ -32,7 +32,7 @@ def set_seed(CUR_SEED):
     torch.backends.cudnn.benchmark = False
 
 class DrivingData(Dataset):
-    def __init__(self, data_dir):
+    def __init__(self, data_dir, validate: bool = True):
         # Collect files and filter to valid .npz zip archives
         raw_list = glob.glob(data_dir)
         filtered_list = []
@@ -55,7 +55,25 @@ class DrivingData(Dataset):
         if dropped > 0:
             logging.warning(f"Filtered out {dropped} invalid/non-npz data files from dataset")
 
-        self.data_list = filtered_list
+        # Optional deep validation: try opening with numpy to catch subtle corruptions
+        if validate:
+            validated_list = []
+            further_dropped = 0
+            for path in filtered_list:
+                try:
+                    with np.load(path) as _:
+                        pass
+                    validated_list.append(path)
+                except Exception as e:
+                    logging.warning(f"Removing unreadable npz file during init: {path} ({e})")
+                    further_dropped += 1
+            if further_dropped > 0:
+                logging.warning(f"Removed {further_dropped} additional corrupted .npz files after open-check")
+            self.data_list = validated_list
+        else:
+            self.data_list = filtered_list
+
+        logging.info(f"DrivingData initialized with {len(self.data_list)} valid samples")
 
     def __len__(self):
         return len(self.data_list)

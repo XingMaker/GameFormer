@@ -9,7 +9,7 @@ from torch.nn import functional as F
 
 
 class DrivingData(Dataset):
-    def __init__(self, data_dir):
+    def __init__(self, data_dir, validate: bool = True):
         # Collect files and filter to valid .npz zip archives
         raw_list = glob.glob(data_dir)
         filtered_list = []
@@ -27,7 +27,18 @@ class DrivingData(Dataset):
             except Exception:
                 continue
 
-        self.data_list = filtered_list
+        if validate:
+            validated_list = []
+            for path in filtered_list:
+                try:
+                    with np.load(path) as _:
+                        pass
+                    validated_list.append(path)
+                except Exception:
+                    continue
+            self.data_list = validated_list
+        else:
+            self.data_list = filtered_list
 
     def __len__(self):
         return len(self.data_list)
