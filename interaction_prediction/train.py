@@ -1,4 +1,5 @@
 import torch
+import os
 import sys
 sys.path.append('..')
 import csv
@@ -146,10 +147,12 @@ def validation_epoch(valid_data, model, epoch):
 
 # Define model training process
 def main():
-
-    log_path = f"./training_log/{args.name}/"
+    # Resolve log directory: prefer --log_dir if provided, otherwise fallback to ./training_log/{name}/
+    log_path = args.log_dir if getattr(args, 'log_dir', '') else f"./training_log/{args.name}/"
+    if not log_path.endswith('/'):
+        log_path += '/'
     os.makedirs(log_path, exist_ok=True)
-    initLogging(log_file=log_path+'train.log')
+    initLogging(log_file=log_path + 'train.log')
 
     logging.info("------------- {} -------------".format(args.name))
     logging.info("Batch size: {}".format(args.batch_size))
@@ -268,6 +271,7 @@ if __name__ == "__main__":
     parser.add_argument('--seed', type=int, help='fix random seed', default=3407)
     # data & loggings
     parser.add_argument('--name', type=str, help='log name (default: "Exp1")', default="Exp1_IP")
+    parser.add_argument('--log_dir', type=str, help='absolute or relative directory to save logs/ckpts; overrides --name if set', default='')
     parser.add_argument('--load_dir', type=str, help='name to load ckpts from log path (e.g. epochs_0.pth)', default='')
     parser.add_argument('--train_set', type=str, help='path to train data')
     parser.add_argument('--valid_set', type=str, help='path to validation data')
