@@ -105,10 +105,12 @@ def valid_epoch(data_loader, model):
 
 
 def model_training():
-    # Logging
-    log_path = f"./training_log/{args.name}/"
+    # Logging: prefer --log_dir if provided; otherwise default to ./training_log/{name}/
+    log_path = args.log_dir if getattr(args, 'log_dir', '') else f"./training_log/{args.name}/"
+    if not log_path.endswith('/'):
+        log_path += '/'
     os.makedirs(log_path, exist_ok=True)
-    initLogging(log_file=log_path+'train.log')
+    initLogging(log_file=log_path + 'train.log')
 
     logging.info("------------- {} -------------".format(args.name))
     logging.info("Batch size: {}".format(args.batch_size))
@@ -151,12 +153,12 @@ def model_training():
                'val-predictorADE': val_metrics[2], 'val-predictorFDE': val_metrics[3]}
 
         if epoch == 0:
-            with open(f'./training_log/{args.name}/train_log.csv', 'w') as csv_file: 
+            with open(log_path + 'train_log.csv', 'w') as csv_file: 
                 writer = csv.writer(csv_file) 
                 writer.writerow(log.keys())
                 writer.writerow(log.values())
         else:
-            with open(f'./training_log/{args.name}/train_log.csv', 'a') as csv_file: 
+            with open(log_path + 'train_log.csv', 'a') as csv_file: 
                 writer = csv.writer(csv_file)
                 writer.writerow(log.values())
 
@@ -164,14 +166,15 @@ def model_training():
         scheduler.step()
 
         # save model at the end of epoch
-        torch.save(gameformer.state_dict(), f'training_log/{args.name}/predictor_{epoch+1}_{val_metrics[0]:.4f}.pth')
-        logging.info(f"Model saved in training_log/{args.name}\n")
+        torch.save(gameformer.state_dict(), log_path + f'predictor_{epoch+1}_{val_metrics[0]:.4f}.pth')
+        logging.info(f"Model saved in {log_path}\n")
 
 
 if __name__ == "__main__":
     # Arguments
     parser = argparse.ArgumentParser(description='Training')
     parser.add_argument('--name', type=str, help='log name (default: "Exp1")', default="Exp1")
+    parser.add_argument('--log_dir', type=str, help='absolute or relative directory to save logs/ckpts; overrides --name if set', default='')
     parser.add_argument('--train_set', type=str, help='path to train data')
     parser.add_argument('--valid_set', type=str, help='path to validation data')
     parser.add_argument('--seed', type=int, help='fix random seed', default=3407)
