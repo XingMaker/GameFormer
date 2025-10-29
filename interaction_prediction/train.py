@@ -1,3 +1,4 @@
+import os
 import torch
 import sys
 sys.path.append('..')
@@ -147,7 +148,12 @@ def validation_epoch(valid_data, model, epoch):
 # Define model training process
 def main():
 
-    log_path = f"./training_log/{args.name}/"
+    # resolve log directory
+    log_base_dir = args.log_dir if args.log_dir else "./training_log"
+    if getattr(args, 'no_name_subdir', False) or not getattr(args, 'name', None):
+        log_path = os.path.join(log_base_dir) + "/"
+    else:
+        log_path = os.path.join(log_base_dir, args.name) + "/"
     os.makedirs(log_path, exist_ok=True)
     initLogging(log_file=log_path+'train.log')
 
@@ -267,6 +273,8 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rate", type=float, help='training learning rates', default=1e-4)
     parser.add_argument('--seed', type=int, help='fix random seed', default=3407)
     # data & loggings
+    parser.add_argument('--log_dir', type=str, help='base directory to save logs and checkpoints; if --no_name_subdir is set, this is the exact directory', default='./training_log')
+    parser.add_argument('--no_name_subdir', action='store_true', help='do not create name subdirectory; use log_dir as the exact output directory')
     parser.add_argument('--name', type=str, help='log name (default: "Exp1")', default="Exp1_IP")
     parser.add_argument('--load_dir', type=str, help='name to load ckpts from log path (e.g. epochs_0.pth)', default='')
     parser.add_argument('--train_set', type=str, help='path to train data')
