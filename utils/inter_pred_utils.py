@@ -38,7 +38,7 @@ class DrivingData(Dataset):
         return len(self.data_list)
     
     def __getitem__(self, idx):
-        data = np.load(self.data_list[idx])
+        data = np.load(self.data_list[idx], allow_pickle=True)
         ego = data['ego'][0]
         neighbor = np.concatenate([data['ego'][1][np.newaxis,...], data['neighbors']], axis=0)
 
