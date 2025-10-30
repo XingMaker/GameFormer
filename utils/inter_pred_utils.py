@@ -4,6 +4,7 @@ import logging
 import glob
 import tensorflow as tf
 import numpy as np
+import time
 from torch.utils.data import Dataset
 from torch.nn import functional as F
 from google.protobuf import text_format
@@ -32,23 +33,61 @@ def set_seed(CUR_SEED):
 
 class DrivingData(Dataset):
     def __init__(self, data_dir):
-        self.data_list = glob.glob(data_dir)
+        # Only keep readable .npz files to avoid directories or other artifacts
+        candidates = glob.glob(data_dir)
+        self.data_list = sorted([
+            p for p in candidates if p.endswith('.npz') and os.path.isfile(p)
+        ])
+        if len(self.data_list) == 0:
+            logging.warning(f"DrivingData: no .npz files found for pattern: {data_dir}")
 
     def __len__(self):
         return len(self.data_list)
     
     def __getitem__(self, idx):
-        data = np.load(self.data_list[idx])
-        ego = data['ego'][0]
-        neighbor = np.concatenate([data['ego'][1][np.newaxis,...], data['neighbors']], axis=0)
+        # Robust loading: retry a few times; skip unreadable files; allow pickle arrays
+        num_files = len(self.data_list)
+        if num_files == 0:
+            raise RuntimeError("DrivingData: no data files available to load")
 
-        map_lanes = data['map_lanes'][:, :, :200:2]
-        map_crosswalks = data['map_crosswalks'][:, :, :100:2]
-        ego_future_states = data['gt_future_states'][0]
-        neighbor_future_states = data['gt_future_states'][1]
-        object_type = data['object_type']
+        # Try current index, then fall back to subsequent files to avoid dropping the batch
+        for offset in range(num_files):
+            path = self.data_list[(idx + offset) % num_files]
 
-        return ego, neighbor, map_lanes, map_crosswalks, ego_future_states, neighbor_future_states, object_type
+            # Attempt to load a few times to mitigate transient FS errors (e.g., remote mount hiccups)
+            last_exception = None
+            for attempt in range(3):
+                try:
+                    with np.load(path, allow_pickle=True) as data:
+                        ego = data['ego'][0]
+                        neighbor = np.concatenate([data['ego'][1][np.newaxis, ...], data['neighbors']], axis=0)
+
+                        map_lanes = data['map_lanes'][:, :, :200:2]
+                        map_crosswalks = data['map_crosswalks'][:, :, :100:2]
+                        ego_future_states = data['gt_future_states'][0]
+                        neighbor_future_states = data['gt_future_states'][1]
+                        object_type = data['object_type']
+
+                    return (
+                        ego,
+                        neighbor,
+                        map_lanes,
+                        map_crosswalks,
+                        ego_future_states,
+                        neighbor_future_states,
+                        object_type,
+                    )
+                except (OSError, ValueError) as exc:
+                    # ValueError often due to pickle requirement; OSError for transient FS issues
+                    last_exception = exc
+                    # Short backoff before retry
+                    time.sleep(0.1 * (attempt + 1))
+
+            # If all attempts failed on this path, log and try the next file
+            logging.warning(f"DrivingData: failed to load '{path}' after retries; skipping. Error: {last_exception}")
+
+        # If we reach here, none of the files could be loaded
+        raise RuntimeError("DrivingData: unable to load any data files after retries")
 
 
 def imitation_loss(trajectories, ground_truth,gmm=True):

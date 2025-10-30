@@ -3,27 +3,57 @@ import logging
 import glob
 import random
 import numpy as np
+import os
+import time
 from torch.utils.data import Dataset
 from torch.nn import functional as F
 
 
 class DrivingData(Dataset):
     def __init__(self, data_dir):
-        self.data_list = glob.glob(data_dir)
+        candidates = glob.glob(data_dir)
+        self.data_list = sorted([
+            p for p in candidates if p.endswith('.npz') and os.path.isfile(p)
+        ])
+        if len(self.data_list) == 0:
+            logging.warning(f"DrivingData(OpenLoop): no .npz files found for pattern: {data_dir}")
 
     def __len__(self):
         return len(self.data_list)
 
     def __getitem__(self, idx):
-        data = np.load(self.data_list[idx])
-        ego = data['ego']
-        neighbors = data['neighbors']
-        ref_line = data['ref_line'] 
-        map_lanes = data['map_lanes']
-        map_crosswalks = data['map_crosswalks']
-        gt_future_states = data['gt_future_states']
+        num_files = len(self.data_list)
+        if num_files == 0:
+            raise RuntimeError("DrivingData(OpenLoop): no data files available to load")
 
-        return ego, neighbors, map_lanes, map_crosswalks, ref_line, gt_future_states
+        for offset in range(num_files):
+            path = self.data_list[(idx + offset) % num_files]
+            last_exception = None
+            for attempt in range(3):
+                try:
+                    with np.load(path, allow_pickle=True) as data:
+                        ego = data['ego']
+                        neighbors = data['neighbors']
+                        ref_line = data['ref_line']
+                        map_lanes = data['map_lanes']
+                        map_crosswalks = data['map_crosswalks']
+                        gt_future_states = data['gt_future_states']
+
+                    return (
+                        ego,
+                        neighbors,
+                        map_lanes,
+                        map_crosswalks,
+                        ref_line,
+                        gt_future_states,
+                    )
+                except (OSError, ValueError) as exc:
+                    last_exception = exc
+                    time.sleep(0.1 * (attempt + 1))
+
+            logging.warning(f"DrivingData(OpenLoop): failed to load '{path}' after retries; skipping. Error: {last_exception}")
+
+        raise RuntimeError("DrivingData(OpenLoop): unable to load any data files after retries")
     
 
 def initLogging(log_file: str, level: str = "INFO"):
