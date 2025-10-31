@@ -4,6 +4,7 @@ import logging
 import glob
 import tensorflow as tf
 import numpy as np
+from typing import Optional
 from torch.utils.data import Dataset
 from torch.nn import functional as F
 from google.protobuf import text_format
@@ -16,12 +17,31 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import random
 
 
-def initLogging(log_file: str, level: str = "INFO"):
-    logging.basicConfig(filename=log_file, filemode='w',
-                        level=getattr(logging, level, None),
-                        format='[%(levelname)s %(asctime)s] %(message)s',
-                        datefmt='%m-%d %H:%M:%S')
-    logging.getLogger().addHandler(logging.StreamHandler())
+def initLogging(
+    log_file: Optional[str] = None,
+    level: str = "INFO",
+    filemode: str = "w",
+    stream: bool = True,
+):
+    level_value = getattr(logging, level.upper(), logging.INFO)
+    handlers = []
+
+    if log_file:
+        handlers.append(logging.FileHandler(log_file, mode=filemode))
+
+    if stream:
+        handlers.append(logging.StreamHandler())
+
+    if not handlers:
+        handlers.append(logging.NullHandler())
+
+    logging.basicConfig(
+        level=level_value,
+        format='[%(levelname)s %(asctime)s] %(message)s',
+        datefmt='%m-%d %H:%M:%S',
+        handlers=handlers,
+        force=True,
+    )
 
 def set_seed(CUR_SEED):
     random.seed(CUR_SEED)

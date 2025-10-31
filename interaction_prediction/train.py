@@ -147,9 +147,17 @@ def validation_epoch(valid_data, model, epoch):
 # Define model training process
 def main():
 
+    local_rank = args.local_rank if args.local_rank is not None else 0
+    args.local_rank = local_rank
+    is_main_process = local_rank == 0
+
     log_path = f"./training_log/{args.name}/"
     os.makedirs(log_path, exist_ok=True)
-    initLogging(log_file=log_path+'train.log')
+    initLogging(
+        log_file=log_path + 'train.log' if is_main_process else None,
+        filemode='w',
+        stream=is_main_process,
+    )
 
     logging.info("------------- {} -------------".format(args.name))
     logging.info("Batch size: {}".format(args.batch_size))
@@ -157,7 +165,6 @@ def main():
     logging.info("Use device: {}".format(args.local_rank))
 
     set_seed(args.seed)
-    local_rank = args.local_rank
     torch.cuda.set_device(local_rank)
     dist.init_process_group(backend='nccl')
 
@@ -260,7 +267,7 @@ def main():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Interaction Prediction Training')
-    parser.add_argument("--local_rank", type=int)
+    parser.add_argument("--local_rank", type=int, default=0)
     # training
     parser.add_argument("--batch_size", type=int, help='training batch sizes', default=16)
     parser.add_argument("--training_epochs", type=int, help='training epochs', default=30)
