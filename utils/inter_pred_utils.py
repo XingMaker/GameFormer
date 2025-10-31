@@ -1,4 +1,5 @@
 import os
+import zipfile
 import torch
 import logging
 import glob
@@ -51,24 +52,79 @@ def set_seed(CUR_SEED):
     torch.backends.cudnn.benchmark = False
 
 class DrivingData(Dataset):
-    def __init__(self, data_dir):
-        self.data_list = glob.glob(data_dir)
+    def __init__(self, data_dir, validate: bool = True):
+        # Collect files and filter to valid .npz zip archives
+        raw_list = glob.glob(data_dir)
+        filtered_list = []
+        for path in raw_list:
+            try:
+                if (
+                    os.path.isfile(path)
+                    and path.lower().endswith('.npz')
+                    and os.path.getsize(path) > 0
+                    and zipfile.is_zipfile(path)
+                ):
+                    with zipfile.ZipFile(path) as zf:
+                        if zf.testzip() is None:
+                            filtered_list.append(path)
+            except Exception:
+                # Skip any entries that cannot be stat'ed or validated
+                continue
+
+        dropped = len(raw_list) - len(filtered_list)
+        if dropped > 0:
+            logging.warning(f"Filtered out {dropped} invalid/non-npz data files from dataset")
+
+        # Optional deep validation: try opening with numpy to catch subtle corruptions
+        if validate:
+            validated_list = []
+            further_dropped = 0
+            for path in filtered_list:
+                try:
+                    with np.load(path) as _:
+                        pass
+                    validated_list.append(path)
+                except Exception as e:
+                    logging.warning(f"Removing unreadable npz file during init: {path} ({e})")
+                    further_dropped += 1
+            if further_dropped > 0:
+                logging.warning(f"Removed {further_dropped} additional corrupted .npz files after open-check")
+            self.data_list = validated_list
+        else:
+            self.data_list = filtered_list
+
+        logging.info(f"DrivingData initialized with {len(self.data_list)} valid samples")
 
     def __len__(self):
         return len(self.data_list)
     
     def __getitem__(self, idx):
-        data = np.load(self.data_list[idx])
-        ego = data['ego'][0]
-        neighbor = np.concatenate([data['ego'][1][np.newaxis,...], data['neighbors']], axis=0)
+        # Robust loading with fallback to nearby entries if a file is corrupted at runtime
+        attempts = 0
+        max_attempts = min(8, len(self.data_list)) if len(self.data_list) > 0 else 0
+        last_error = None
+        while attempts < max_attempts:
+            real_idx = (idx + attempts) % len(self.data_list)
+            path = self.data_list[real_idx]
+            try:
+                with np.load(path) as data:
+                    ego = data['ego'][0]
+                    neighbor = np.concatenate([data['ego'][1][np.newaxis, ...], data['neighbors']], axis=0)
 
-        map_lanes = data['map_lanes'][:, :, :200:2]
-        map_crosswalks = data['map_crosswalks'][:, :, :100:2]
-        ego_future_states = data['gt_future_states'][0]
-        neighbor_future_states = data['gt_future_states'][1]
-        object_type = data['object_type']
+                    map_lanes = data['map_lanes'][:, :, :200:2]
+                    map_crosswalks = data['map_crosswalks'][:, :, :100:2]
+                    ego_future_states = data['gt_future_states'][0]
+                    neighbor_future_states = data['gt_future_states'][1]
+                    object_type = data['object_type']
 
-        return ego, neighbor, map_lanes, map_crosswalks, ego_future_states, neighbor_future_states, object_type
+                return ego, neighbor, map_lanes, map_crosswalks, ego_future_states, neighbor_future_states, object_type
+            except (zipfile.BadZipFile, OSError, ValueError, KeyError) as e:
+                logging.warning(f"Skipping unreadable npz file: {path} ({e})")
+                last_error = e
+                attempts += 1
+
+        # If all attempts failed, raise a clear error
+        raise RuntimeError(f"All attempts to load dataset entries failed around index {idx}. Last error: {last_error}")
 
 
 def imitation_loss(trajectories, ground_truth,gmm=True):
