@@ -15,7 +15,7 @@ class DrivingData(Dataset):
         return len(self.data_list)
 
     def __getitem__(self, idx):
-        data = np.load(self.data_list[idx])
+        data = np.load(self.data_list[idx], allow_pickle=True)
         ego = data['ego']
         neighbors = data['neighbors']
         ref_line = data['ref_line'] 
