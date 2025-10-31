@@ -14,6 +14,7 @@ from waymo_open_dataset.protos import scenario_pb2
 from utils.data_utils import *
 import os
 import pickle
+import io
 
 tf.config.set_visible_devices([], 'GPU')
 
@@ -204,7 +205,7 @@ class DataProcess(object):
                         break             
 
             # scale the lane
-            vectorized_map[i] = cache_lane[np.linspace(0, added_points, num=300, endpoint=False, dtype=np.int)]
+            vectorized_map[i] = cache_lane[np.linspace(0, added_points, num=300, endpoint=False, dtype=int)]
           
             # count
             added_lanes += 1
@@ -218,7 +219,9 @@ class DataProcess(object):
         for _, crosswalk in self.crosswalks.items():
             polygon = Polygon([(point.x, point.y) for point in crosswalk.polygon])
             polyline = polygon_completion(crosswalk.polygon)
-            polyline = polyline[np.linspace(0, polyline.shape[0], num=100, endpoint=False, dtype=np.int)]
+            if polyline.shape[0] == 0:
+                continue
+            polyline = polyline[np.linspace(0, polyline.shape[0], num=100, endpoint=False, dtype=int)]
 
             if detection.intersects(polygon):
                 vectorized_crosswalks[added_cross_walks, :polyline.shape[0]] = polyline
@@ -414,6 +417,14 @@ class DataProcess(object):
             plt.close()
 
         return ego, neighbors, map_lanes, map_crosswalks, ground_truth,region_dict
+
+    def _save_npz_safely(self, filename, arrays_dict):
+        """Save npz via in-memory buffer to avoid ZipFile close issues on some filesystems."""
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        buffer = io.BytesIO()
+        np.savez(buffer, **arrays_dict)
+        with open(filename, "wb") as f:
+            f.write(buffer.getvalue())
     
     def interactive_process(self,tracks_list,interesting_ids,tracks):
         self.sdc_ids_list = []
@@ -516,14 +527,19 @@ class DataProcess(object):
                     # save data
                     inter = 'interest' if interesting==1 else 'r'
                     filename = self.save_dir + f"/{scenario_id}_{sdc_ids[0]}_{sdc_ids[1]}_{inter}.npz"
-                    if test:
-                        np.savez(filename, ego=np.array(ego), neighbors=np.array(neighbors), map_lanes=np.array(map_lanes), 
-                        map_crosswalks=np.array(map_crosswalks),object_type=np.array(object_type),region_6=np.array(region_dict[6]),
-                        object_index=np.array(object_index),current_state=np.array(self.current_xyzh[0]))
-                    else:
-                        np.savez(filename, ego=np.array(ego), neighbors=np.array(neighbors), map_lanes=np.array(map_lanes), 
-                        map_crosswalks=np.array(map_crosswalks),object_type=np.array(object_type),region_6=np.array(region_dict[6]),
-                        object_index=np.array(object_index),current_state=np.array(self.current_xyzh[0]),gt_future_states=np.array(ground_truth))
+                    arrays = {
+                        "ego": np.array(ego),
+                        "neighbors": np.array(neighbors),
+                        "map_lanes": np.array(map_lanes),
+                        "map_crosswalks": np.array(map_crosswalks),
+                        "object_type": np.array(object_type),
+                        "region_6": np.array(region_dict[6]),
+                        "object_index": np.array(object_index),
+                        "current_state": np.array(self.current_xyzh[0]),
+                    }
+                    if not test:
+                        arrays["gt_future_states"] = np.array(ground_truth)
+                    self._save_npz_safely(filename, arrays)
                 
                 self.pbar.update(1)
 
